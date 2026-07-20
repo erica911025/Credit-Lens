@@ -4,6 +4,7 @@
 //      並以企業關係圖譜(GraphRAG)推理隱藏風險。
 import { ref, computed } from "vue";
 import { focusRing, num } from "../constants.js";
+import { reviewApi } from "../api.js";
 import { INTEL, CASES } from "../mock.js";
 
 const emit = defineEmits(["open-case"]);
@@ -12,14 +13,23 @@ const query = ref("");
 const searched = ref(false);
 const hit = ref(null);
 
-function doSearch(q = query.value) {
+const searching = ref(false);
+async function doSearch(q = query.value) {
   query.value = q;
   const key = q.trim();
   searched.value = !!key;
-  hit.value =
-    INTEL[key] ||
-    Object.values(INTEL).find((x) => key && x.name.replaceAll(" ", "").includes(key.replaceAll(" ", ""))) ||
-    null;
+  hit.value = null;
+  if (!key) return;
+  searching.value = true;
+  // USE_MOCK 時以本地 INTEL 模擬;真 API 為 5.11 POST /api/intel/lookup
+  const localHit = INTEL[key] ||
+    Object.values(INTEL).find((x) => x.name.replaceAll(" ", "").includes(key.replaceAll(" ", ""))) || null;
+  try {
+    hit.value = await reviewApi("/api/intel/lookup", { query: key }, localHit, 700);
+  } catch (e) {
+    hit.value = null; // COMPANY_NOT_FOUND → 顯示既有的查無資料空狀態
+  }
+  searching.value = false;
 }
 
 function createCase() {
@@ -80,8 +90,12 @@ const srcTag = "inline-block px-1.5 py-0.5 rounded-sm text-xs bg-slate-100 text-
       </p>
     </div>
 
+    <div v-if="searching" class="mt-5 bg-white border border-slate-300 p-4 text-sm text-slate-500" aria-live="polite">
+      彙整多源情資中<span class="animate-pulse" aria-hidden="true"> …</span>
+    </div>
+
     <!-- 查無資料 -->
-    <div v-if="searched && !hit" class="mt-5 border border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+    <div v-if="searched && !searching && !hit" class="mt-5 border border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
       尚未介接「{{ query.trim() }}」之外部情資,請確認統一編號或公司名稱。
     </div>
 

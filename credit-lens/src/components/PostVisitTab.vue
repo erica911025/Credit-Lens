@@ -1,11 +1,14 @@
 <script setup>
 // 頁籤 4:拜訪後評分
-// 資料來源 = 規格書 5.9 /api/postvisit/extract、5.10 /api/postvisit/score(目前為 Mock)
+// 資料來源 = 規格書 5.9 /api/postvisit/extract、5.10 /api/postvisit/score、5.6 /api/report
 import { ref, computed } from "vue";
 import { VERDICT, focusRing, num } from "../constants.js";
-import { sleep } from "../api.js";
+import { reviewApi, USE_MOCK, API_BASE } from "../api.js";
 import { MOCK, SAMPLE_NOTES } from "../mock.js";
+import { store } from "../store.js";
 import WaterfallChart from "./WaterfallChart.vue";
+
+const props = defineProps({ c: { type: Object, required: true } });
 
 const notes = ref(SAMPLE_NOTES);
 const stage = ref("idle");
@@ -13,16 +16,40 @@ const ext = ref(null);
 const sc = ref(null);
 const busy = computed(() => stage.value === "extracting" || stage.value === "scoring");
 
+const runErr = ref(null);
+
 async function run() {
-  ext.value = null; sc.value = null; stage.value = "extracting";
-  await sleep(1700); ext.value = MOCK.postExtract; stage.value = "extracted"; // [API] /api/postvisit/extract(5.9)
-  await sleep(1100); stage.value = "scoring";
-  await sleep(1500); sc.value = MOCK.postScore; stage.value = "done";         // [API] /api/postvisit/score(5.10)
+  ext.value = null; sc.value = null; runErr.value = null; stage.value = "extracting";
+  try {
+    // 5.9:會議紀錄結構化萃取
+    ext.value = await reviewApi("/api/postvisit/extract",
+      { company_id: props.c.id, notes: notes.value }, MOCK.postExtract, 1700);
+    stage.value = "scoring";
+    // 5.10:base_score = AI 審查會議產出的拜訪前基準分(store);未召開過會議時退回 Mock 的 71
+    const baseScore = store.judgeByCompany[props.c.id]?.final_score ?? MOCK.judge.final_score;
+    sc.value = await reviewApi("/api/postvisit/score",
+      { company_id: props.c.id, base_score: baseScore, extract_result: ext.value }, MOCK.postScore, 1500);
+    stage.value = "done";
+  } catch (e) {
+    runErr.value = e; stage.value = "idle"; // 7.3:顯示 error.message + 重試
+  }
 }
 
-// 5.6:此 API 允許最後實作,先以按鈕+提示佔位;整合時改為
-// callApi("/api/report", { company_id, judge_result }) → window.open(res.report_url, "_blank")
-function makeReport() { alert("Demo:呼叫 POST /api/report 產出 PDF"); }
+// 5.6:產出授信審查報告 PDF → 新分頁開啟 report_url
+const reporting = ref(false);
+async function makeReport() {
+  if (USE_MOCK) { alert("Demo(USE_MOCK):整合日將呼叫 POST /api/report 並開啟 PDF"); return; }
+  const judge = store.judgeByCompany[props.c.id];
+  if (!judge) { alert("請先於「AI 審查會議」頁籤完成審查,才能產出報告(需要 judge_result)。"); return; }
+  reporting.value = true;
+  try {
+    const r = await reviewApi("/api/report", { company_id: props.c.id, judge_result: judge }, { report_url: "" });
+    if (r.report_url) window.open(new URL(r.report_url, API_BASE).href, "_blank");
+  } catch (e) {
+    alert(`報告產出失敗(${e.code}):${e.message}`);
+  }
+  reporting.value = false;
+}
 </script>
 
 <template>
@@ -37,6 +64,14 @@ function makeReport() { alert("Demo:呼叫 POST /api/report 產出 PDF"); }
         :class="`mt-2.5 px-6 h-10 text-sm font-bold text-white bg-sky-900 hover:bg-sky-800 disabled:bg-slate-300 disabled:text-slate-500 rounded-sm motion-safe:transition-colors ${focusRing}`">
         {{ busy ? "分析中…" : "開始分析" }}
       </button>
+    </div>
+
+    <div v-if="runErr" role="alert" class="border border-rose-300 border-l-4 border-l-rose-600 bg-rose-50 p-4 flex items-center justify-between gap-4 flex-wrap">
+      <div>
+        <div class="font-bold text-rose-800 text-sm mb-0.5">分析中斷({{ runErr.code }})</div>
+        <p class="text-sm text-slate-800 leading-relaxed">{{ runErr.message }}</p>
+      </div>
+      <button @click="run" class="px-5 h-10 text-sm font-bold text-white bg-rose-700 hover:bg-rose-600 rounded-sm motion-safe:transition-colors">重試</button>
     </div>
 
     <div v-if="stage === 'extracting'" class="bg-white border border-slate-300 p-4 text-sm text-slate-500" aria-live="polite">
@@ -76,9 +111,9 @@ function makeReport() { alert("Demo:呼叫 POST /api/report 產出 PDF"); }
         </div>
       </div>
 
-      <div v-if="ext.newRisks.length > 0">
+      <div v-if="ext.new_risks.length > 0">
         <div class="text-xs font-bold text-rose-800 mb-1.5">三、面談中新發現的風險</div>
-        <div v-for="(n, i) in ext.newRisks" :key="i"
+        <div v-for="(n, i) in ext.new_risks" :key="i"
           class="border border-rose-300 border-l-4 border-l-rose-600 bg-rose-50 p-3 text-sm text-slate-800 leading-relaxed">{{ n.text }}</div>
       </div>
     </div>
@@ -89,14 +124,14 @@ function makeReport() { alert("Demo:呼叫 POST /api/report 產出 PDF"); }
 
     <div v-if="sc" class="bg-white border border-slate-300 border-t-4 border-t-emerald-600 p-4 motion-safe:animate-[fadeUp_.4s_ease-out]">
       <h3 class="font-bold text-slate-900 mb-3">評分瀑布 — 每一分的來源</h3>
-      <WaterfallChart :items="sc.waterfall" :final-score="sc.final" />
+      <WaterfallChart :items="sc.waterfall" :final-score="sc.final_score" />
       <div class="mt-4 bg-slate-50 border border-slate-300 p-3 text-sm leading-relaxed">
         <span class="font-bold text-sky-900">審查官建議:</span>
-        <span class="text-slate-800"> {{ sc.rec }}</span>
+        <span class="text-slate-800"> {{ sc.recommendation }}</span>
       </div>
       <button @click="makeReport"
         :class="`mt-3 px-6 h-11 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-600 rounded-sm motion-safe:transition-colors ${focusRing}`">
-        產出授信審查報告(PDF)
+        {{ reporting ? "報告產出中…" : "產出授信審查報告(PDF)" }}
       </button>
     </div>
   </div>

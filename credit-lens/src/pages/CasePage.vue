@@ -48,9 +48,9 @@ const tab = ref("committee");
 
     <div class="pt-4 pb-2" role="tabpanel" :id="`panel-${tab}`" :aria-labelledby="`tab-${tab}`">
       <CommitteeTab v-if="tab === 'committee'" :c="c" />
-      <PreVisitTab v-else-if="tab === 'pre'" />
-      <MidVisitTab v-else-if="tab === 'mid'" />
-      <PostVisitTab v-else-if="tab === 'post'" />
+      <PreVisitTab v-else-if="tab === 'pre'" :c="c" />
+      <MidVisitTab v-else-if="tab === 'mid'" :c="c" />
+      <PostVisitTab v-else-if="tab === 'post'" :c="c" />
     </div>
   </main>
 </template>

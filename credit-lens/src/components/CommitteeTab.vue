@@ -4,6 +4,7 @@ import { ref, reactive, computed, nextTick } from "vue";
 import { AGENT, SEVERITY, focusRing, num } from "../constants.js";
 import { reviewApi } from "../api.js";
 import { MOCK } from "../mock.js";
+import { store } from "../store.js";
 import WaterfallChart from "./WaterfallChart.vue";
 
 const props = defineProps({ c: { type: Object, required: true } });
@@ -34,6 +35,7 @@ async function run(resume = false) {
     r.judge = await reviewApi("/api/review/judge",
       { company_id: props.c.id, finance_result: r.finance, tech_result: r.tech }, // 5.5:前兩支回應原封不動帶入
       MOCK.judge, 2000);
+    store.judgeByCompany[props.c.id] = r.judge; // 供拜訪後評分(base_score)與報告(5.6)使用
     phase.value = "done"; scrollToEnd();
   } catch (e) {
     err.value = e;        // 顯示 error.message + 重試按鈕(7.3)

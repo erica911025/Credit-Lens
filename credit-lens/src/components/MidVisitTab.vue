@@ -1,12 +1,22 @@
 <script setup>
 // 頁籤 3:拜訪中提詞
-// 資料來源 = 規格書 5.8 /api/interview/assess(目前為 Mock 判定邏輯)
-import { ref, computed, onUnmounted } from "vue";
+// 提問單來源 = 5.7 /api/pre/brief;判定來源 = 5.8 /api/interview/assess
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { VERDICT, focusRing, num } from "../constants.js";
-import { sleep } from "../api.js";
+import { reviewApi } from "../api.js";
 import { MOCK } from "../mock.js";
 
-const qs = ref(MOCK.questions.map((q) => ({ ...q, status: q.id === 1 ? "active" : "pending" })));
+const props = defineProps({ c: { type: Object, required: true } });
+
+const qs = ref([]);
+onMounted(async () => {
+  try {
+    const brief = await reviewApi("/api/pre/brief",
+      { company_id: props.c.id, company_name: props.c.name },
+      { radar: MOCK.radar, questions: MOCK.questions }, 600);
+    qs.value = brief.questions.map((q) => ({ ...q, status: q.id === 1 ? "active" : "pending" }));
+  } catch (e) { qs.value = []; }
+});
 const activeId = ref(1);
 const answerInput = ref("");
 const busy = ref(false);
@@ -41,10 +51,16 @@ onUnmounted(() => clearInterval(recTimer));
 async function submitAnswer() {
   if (!answerInput.value.trim() || busy.value) return;
   busy.value = true; res.value = null;
-  await sleep(1400); // [API] /api/interview/assess(5.8;整合日改為 reviewApi 呼叫)
-  const out = assess(answerInput.value);
-  res.value = out;
-  qs.value = qs.value.map((q) => (q.id === activeId.value ? { ...q, status: out.verdict } : q));
+  try {
+    // 5.8 Request:company_id + question_id + question + answer
+    const out = await reviewApi("/api/interview/assess",
+      { company_id: props.c.id, question_id: activeId.value, question: activeQ.value.q, answer: answerInput.value },
+      assess(answerInput.value), 1400); // USE_MOCK 時以本地規則模擬判定
+    res.value = out;
+    qs.value = qs.value.map((q) => (q.id === activeId.value ? { ...q, status: out.verdict } : q));
+  } catch (e) {
+    res.value = { verdict: "unresolved", reason: `判定失敗(${e.code}):${e.message}`, follow: "請重試。" };
+  }
   busy.value = false;
 }
 </script>
@@ -56,7 +72,8 @@ async function submitAnswer() {
       <h3 class="text-sm font-bold text-slate-900 border-l-4 border-sky-800 pl-2 mb-2">
         風險點清單(已化解 <span :class="num">{{ doneCount }}/{{ qs.length }}</span>)
       </h3>
-      <ul class="border-t-2 border-sky-900">
+      <div v-if="qs.length === 0" class="border border-slate-300 bg-white p-6 text-sm text-slate-500">載入提問單中<span class="animate-pulse" aria-hidden="true"> …</span></div>
+      <ul v-else class="border-t-2 border-sky-900">
         <li v-for="q in qs" :key="q.id" class="border-b border-slate-300">
           <button @click="pickQ(q.id)" :aria-current="q.id === activeId ? 'true' : undefined"
             :class="[`w-full text-left px-3 py-2.5 text-sm flex items-center gap-2 motion-safe:transition-colors ${focusRing}`,
@@ -79,7 +96,7 @@ async function submitAnswer() {
     </div>
 
     <!-- 右:提問與判定 -->
-    <div class="lg:col-span-3 space-y-3">
+    <div class="lg:col-span-3 space-y-3" v-if="activeQ">
       <div class="bg-white border border-slate-300 border-l-4 border-l-sky-600 p-4">
         <div :class="`text-xs text-sky-900 font-bold mb-1 ${num}`">問題 {{ activeQ.id }}/{{ qs.length }} · {{ activeQ.dim }}</div>
         <p class="text-sm text-slate-900 leading-relaxed font-medium">{{ activeQ.q }}</p>

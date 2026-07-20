@@ -1,35 +1,67 @@
 <script setup>
 // 頁籤 2:拜訪前情資(手刻 SVG 雷達圖 + 防禦提問單)
-// 資料來源 = 規格書 5.7 /api/pre/brief 回應(目前為 Mock)
-import { ref, computed } from "vue";
+// 資料來源 = 規格書 5.7 /api/pre/brief(USE_MOCK=true 時回退第 5 章範例 JSON)
+import { ref, computed, onMounted } from "vue";
 import { AGENT, num } from "../constants.js";
+import { reviewApi } from "../api.js";
 import { MOCK } from "../mock.js";
 
+const props = defineProps({ c: { type: Object, required: true } });
+
+const brief = ref(null); // BriefResult:{ radar, questions }
+const loadErr = ref(null);
 const sel = ref("finance");
-const selDim = computed(() => MOCK.radar.find((x) => x.key === sel.value));
-const weakest = [...MOCK.radar].sort((a, b) => a.score - b.score)[0];
+
+async function load() {
+  loadErr.value = null;
+  try {
+    brief.value = await reviewApi(
+      "/api/pre/brief",
+      { company_id: props.c.id, company_name: props.c.name }, // 5.7 Request
+      { radar: MOCK.radar, questions: MOCK.questions },
+      900
+    );
+  } catch (e) {
+    loadErr.value = e; // 5.2 錯誤格式,依 7.3 顯示訊息 + 重試
+  }
+}
+onMounted(load);
+
+const radar = computed(() => brief.value?.radar || []);
+const questions = computed(() => brief.value?.questions || []);
+const selDim = computed(() => radar.value.find((x) => x.key === sel.value) || radar.value[0]);
+const weakest = computed(() => [...radar.value].sort((a, b) => a.score - b.score)[0]);
 
 const R_CX = 160, R_CY = 140, R_R = 96;
 function radarPt(i, val, r = R_R) {
-  const a = (Math.PI * 2 * i) / MOCK.radar.length - Math.PI / 2;
+  const n = radar.value.length || 6;
+  const a = (Math.PI * 2 * i) / n - Math.PI / 2;
   return [R_CX + Math.cos(a) * (val / 100) * r, R_CY + Math.sin(a) * (val / 100) * r];
 }
-function radarPoly(field) {
-  return MOCK.radar.map((d, i) => radarPt(i, d[field]).join(",")).join(" ");
-}
-const radarGrid = [25, 50, 75, 100].map((lv) => MOCK.radar.map((_, i) => radarPt(i, lv).join(",")).join(" "));
-const radarAxes = MOCK.radar.map((_, i) => radarPt(i, 100));
-const radarLabels = MOCK.radar.map((d, i) => {
+const radarPoly = (field) => radar.value.map((d, i) => radarPt(i, d[field]).join(",")).join(" ");
+const radarGrid = computed(() => [25, 50, 75, 100].map((lv) => radar.value.map((_, i) => radarPt(i, lv).join(",")).join(" ")));
+const radarAxes = computed(() => radar.value.map((_, i) => radarPt(i, 100)));
+const radarLabels = computed(() => radar.value.map((d, i) => {
   const [x, y] = radarPt(i, 122);
-  const a = (Math.PI * 2 * i) / MOCK.radar.length - Math.PI / 2;
+  const a = (Math.PI * 2 * i) / radar.value.length - Math.PI / 2;
   const cos = Math.cos(a);
   const anchor = Math.abs(cos) < 0.3 ? "middle" : cos > 0 ? "start" : "end";
   return { ...d, x, y: y + 4, anchor };
-});
+}));
 </script>
 
 <template>
-  <div class="space-y-5">
+  <div v-if="loadErr" role="alert" class="border border-rose-300 border-l-4 border-l-rose-600 bg-rose-50 p-4 flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      <div class="font-bold text-rose-800 text-sm mb-0.5">情資載入失敗({{ loadErr.code }})</div>
+      <p class="text-sm text-slate-800 leading-relaxed">{{ loadErr.message }}</p>
+    </div>
+    <button @click="load" class="px-5 h-10 text-sm font-bold text-white bg-rose-700 hover:bg-rose-600 rounded-sm motion-safe:transition-colors">重試</button>
+  </div>
+  <div v-else-if="!brief" class="bg-white border border-slate-300 p-4 text-sm text-slate-500" aria-live="polite">
+    載入拜訪前情資中<span class="animate-pulse" aria-hidden="true"> …</span>
+  </div>
+  <div v-else class="space-y-5">
     <div class="grid lg:grid-cols-2 gap-4">
       <div class="bg-white border border-slate-300 p-3">
         <h3 class="text-sm font-bold text-slate-900 border-l-4 border-sky-800 pl-2 mb-1">護城河雷達圖</h3>
@@ -79,7 +111,7 @@ const radarLabels = MOCK.radar.map((d, i) => {
         <h2 class="border-l-4 border-sky-800 pl-3 text-lg font-bold text-slate-900">護城河防禦提問單</h2>
       </div>
       <ol class="border-t-2 border-sky-900">
-        <li v-for="q in MOCK.questions" :key="q.id" class="bg-white border-b border-slate-300 px-4 py-3 hover:bg-sky-50 motion-safe:transition-colors">
+        <li v-for="q in questions" :key="q.id" class="bg-white border-b border-slate-300 px-4 py-3 hover:bg-sky-50 motion-safe:transition-colors">
           <div class="flex gap-3">
             <span :class="`${num} text-sky-900 font-bold text-sm shrink-0 w-8`">Q{{ q.id }}.</span>
             <div class="min-w-0">

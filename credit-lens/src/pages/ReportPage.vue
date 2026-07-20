@@ -1,9 +1,23 @@
 <script setup>
 // 頁面 4:報告中心(報告歸檔 + 跨案件承諾事項追蹤)
 // 報告列表 = 5.6 /api/report 產出物的歸宿;承諾追蹤 = 5.9 extract 之 commitments 彙總
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { focusRing, num } from "../constants.js";
+import { reviewApi } from "../api.js";
 import { REPORTS, TRACKED_COMMITMENTS } from "../mock.js";
+
+// 5.12 / 5.13:USE_MOCK 時回退本地 Mock
+const reports = ref([]);
+const tracked = ref([]);
+onMounted(async () => {
+  try {
+    const [r1, r2] = await Promise.all([
+      reviewApi("/api/reports/list", { status: "全部" }, { reports: REPORTS }, 400),
+      reviewApi("/api/commitments/list", {}, { commitments: TRACKED_COMMITMENTS }, 400),
+    ]);
+    reports.value = r1.reports; tracked.value = r2.commitments;
+  } catch (e) { reports.value = []; tracked.value = []; }
+});
 
 // 今日(民國):與 Demo 劇本一致
 const TODAY = "115-07-20";
@@ -18,17 +32,17 @@ const STATUS = {
 
 const filter = ref("全部");
 const filterOptions = ["全部", "草稿", "已送審", "已核定"];
-const reportList = computed(() => REPORTS.filter((r) => filter.value === "全部" || r.status === filter.value));
+const reportList = computed(() => reports.value.filter((r) => filter.value === "全部" || r.status === filter.value));
 
 const commitments = computed(() =>
-  TRACKED_COMMITMENTS.map((c) => ({ ...c, left: daysLeft(c.due) })).sort((a, b) => a.left - b.left)
+  tracked.value.map((c) => ({ ...c, left: daysLeft(c.due) })).sort((a, b) => a.left - b.left)
 );
 const overdueCount = computed(() => commitments.value.filter((c) => c.left < 0).length);
 
 const stats = computed(() => [
-  ["本月產出報告", `${REPORTS.length} 份`],
-  ["平均綜合評分", `${Math.round(REPORTS.reduce((a, r) => a + r.score, 0) / REPORTS.length)} 分`],
-  ["追蹤中承諾事項", `${TRACKED_COMMITMENTS.length} 項`],
+  ["本月產出報告", `${reports.value.length} 份`],
+  ["平均綜合評分", reports.value.length ? `${Math.round(reports.value.reduce((a, r) => a + r.score, 0) / reports.value.length)} 分` : "—"],
+  ["追蹤中承諾事項", `${tracked.value.length} 項`],
 ]);
 
 // 5.6:整合時改為開啟後端回傳之 report_url

@@ -3,6 +3,7 @@
 // 結構 = 規格書 v1.1 第 5 章範例回應 JSON,欄位名一律 snake_case(7.1)
 // ============================================================
 export const CASES = [
+   { id: "22099131", name: "台灣積體電路製造股份有限公司", industry: "半導體", stage: "pre", score: null, updated: "115-07-20", status: "審查中" },
   { id: "12345678", name: "XX 固態電池科技股份有限公司", industry: "儲能/電池", stage: "post", score: 68, updated: "115-07-16", status: "審查中" },
   { id: "23456789", name: "OO 低軌衛星通訊股份有限公司", industry: "太空科技", stage: "pre", score: null, updated: "115-07-15", status: "情資蒐集" },
   { id: "34567890", name: "ΔΔ 基因定序服務股份有限公司", industry: "生技醫療", stage: "mid", score: 74, updated: "115-07-14", status: "面談排程" },
@@ -54,16 +55,16 @@ export const MOCK = {
       { risk: "量產良率門檻", summary: "現況 63%/門檻 75%,有改善合約與明確時程", verdict: "resolved" },
       { risk: "客戶集中與專利綁定", summary: "證實綁定、2027 到期,續約中且第三客戶送樣", verdict: "partial" },
     ],
-    newRisks: [{ text: "廠房二期再投入 12 億,原財報未揭露,資金缺口實際擴大。" }],
+    new_risks: [{ text: "廠房二期再投入 12 億,原財報未揭露,資金缺口實際擴大。" }], // 6.9:snake_case
   },
   postScore: { // PostScoreResult(6.10),5.10 回應
-    final: 68,
+    final_score: 68,
     waterfall: [
       { label: "拜訪前基準", value: 71, type: "base" }, { label: "良率已化解", value: 8, type: "plus" },
       { label: "承諾具體可驗", value: 4, type: "plus" }, { label: "資金仍未落定", value: -6, type: "minus" },
       { label: "未揭露支出", value: -9, type: "minus" }, // 6.5:label 6 字以內
     ],
-    rec: "附條件核貸:以 8/15 承諾文件到齊 + B 輪正式簽約為撥款前提;二期廠房資金計畫須補件。",
+    recommendation: "附條件核貸:以 8/15 承諾文件到齊 + B 輪正式簽約為撥款前提;二期廠房資金計畫須補件。",
   },
 };
 
